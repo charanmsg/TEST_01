@@ -1,0 +1,642 @@
+# Note:
+
+# The dataset consists of 100 rows. To maintain clarity and avoid clutter,
+# we cannot display all the data at once. Instead, we have selected a subset 
+# for analysis, allowing us to focus on key insights while ensuring the 
+# presentation remains clear and manageable. 
+# 
+# Although the code may sometimes be written for specific counts like top 10, 
+# top 20, or top 30, we opted to implement a filter to enhance our analysis. 
+# This flexibility allows us to adjust the number of rows displayed based on 
+# the specific needs of our analysis while keeping the focus on meaningful 
+# insights.
+
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(lubridate)
+library(corrplot)
+library(cluster)
+library(factoextra)
+library(readr)
+library(tidyr)
+library(scales)
+
+install.packages("dplyr")
+install.packages("ggplot2")
+install.packages("tidyr")
+install.packages("readr")
+install.packages("treemap")
+install.packages("ggalt")
+install.packages("scales")
+
+
+
+fortune_data <- read.csv("C:\\Users\\kr720\\Downloads\\Largest_Companies.csv", stringsAsFactors = FALSE)
+
+# View the first few rows
+head(fortune_data)
+
+# Get a summary of the dataset
+summary(fortune_data)
+
+# Check the structure of the dataset
+str(fortune_data)
+
+# Check for missing values in each column
+colSums(is.na(fortune_data))
+
+# Rename columns manually
+colnames(fortune_data) <- c("Rank", "Name", "Industry", "Revenue USD Millions", "Revenue growth", "Employees", "Headquarters")
+
+# Check the new column names
+colnames(fortune_data)
+
+# Clean 'Revenue USD Millions' and 'Revenue growth'
+fortune_data$`Revenue USD Millions` <- as.numeric(gsub(",", "", fortune_data$`Revenue USD Millions`))
+fortune_data$`Revenue growth` <- as.numeric(gsub("%", "", fortune_data$`Revenue growth`))
+
+# Check for any NA values in these columns
+sum(is.na(fortune_data$`Revenue USD Millions`))
+sum(is.na(fortune_data$`Revenue growth`))
+
+# Verify the cleaned data
+head(fortune_data)
+
+# Summary of the dataset to understand basic statistics
+summary(fortune_data)
+
+# Check for missing values across the entire dataset
+colSums(is.na(fortune_data))
+
+
+#Company_Name
+
+#FOCUS - TOP_COMPANIES
+
+#1. Top Companies by Revenue
+
+# Load necessary library
+library(ggplot2)
+library(scales)
+
+# Sort the companies by revenue in descending order and select top 20
+fortune_data_sorted <- fortune_data[order(fortune_data$`Revenue USD Millions`, decreasing = TRUE),][1:25,]
+
+# Create bar chart for top companies revenue distribution with values on the bars
+ggplot(fortune_data_sorted, aes(x = reorder(Name, `Revenue USD Millions`), y = `Revenue USD Millions`)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_text(aes(label = scales::comma(`Revenue USD Millions`)), 
+            vjust = -0.3, size = 3.5) +  # Add labels above the bars
+  scale_y_continuous(labels = scales::comma) +  # Avoid scientific notation, use commas for large numbers
+  labs(title = "Top 25 Companies by Revenue",
+       x = "Company",
+       y = "Revenue (USD Millions)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+
+#BREAK
+
+#2. Top Companies by Revenue Growth
+
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(scales)  # For formatting scales
+
+# Convert Revenue growth to numeric (remove the percentage sign)
+fortune_data$`Revenue growth` <- as.numeric(gsub("%", "", fortune_data$`Revenue growth`))
+
+# Sort the data by revenue growth and select the top 10 companies
+fortune_data_top <- fortune_data %>%
+  arrange(desc(`Revenue growth`)) %>%
+  slice(1:25)
+
+# Create a bar chart for the top companies by revenue growth
+ggplot(fortune_data_top, aes(x = reorder(Name, `Revenue growth`), y = `Revenue growth`)) +
+  geom_bar(stat = "identity", fill = "orange", alpha = 0.8) +  # Bar for company revenue growth
+  geom_text(aes(label = paste0(round(`Revenue growth`, 1), "%")), 
+            vjust = -0.5, size = 3.5, color = "black") +  # Display revenue growth values on the bars
+  labs(title = "Top 25 Companies by Revenue Growth",
+       x = "Company",
+       y = "Revenue Growth (%)") +
+  theme_minimal() +
+  scale_y_continuous(labels = percent_format(scale = 1)) +  # Format y-axis as percentage
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+
+
+#BREAK
+
+#3. Top Companies having highest Revenue Growth and Industry Average.
+
+# Sort the data by revenue growth and select the top 25 companies
+fortune_data_top <- fortune_data %>%
+  arrange(desc(`Revenue growth`)) %>%
+  slice(1:25)
+
+# Calculate average revenue growth per industry
+industry_avg_growth <- fortune_data_top %>%
+  group_by(Industry) %>%
+  summarize(Average_Growth = mean(`Revenue growth`, na.rm = TRUE))
+
+# Merge the average growth data with the original top  dataset
+fortune_data_with_avg_top <- merge(fortune_data_top, industry_avg_growth, by = "Industry")
+
+# Create a bar chart comparing company growth vs industry average for top 25
+ggplot(fortune_data_with_avg_top, aes(x = reorder(Name, `Revenue growth`), y = `Revenue growth`)) +
+  geom_bar(stat = "identity", aes(fill = "Company Growth"), color = "blue", alpha = 0.6) +
+  geom_text(aes(label = paste0(round(`Revenue growth`, 1), "%")), 
+            vjust = -0.5, size = 3.5, color = "black") +  # Display revenue growth values on the bars
+  geom_hline(aes(yintercept = Average_Growth, color = Industry), linetype = "dashed", size = 1) +  # Industry average as dashed line
+  labs(title = "Top 25 Companies: Revenue Growth vs Industry Average",
+       x = "Company",
+       y = "Revenue Growth (%)",
+       fill = "Growth Type") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +  # Format y-axis as percentage
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+
+
+#BREAK 
+
+#4. Employee Distribution by Top Companies 
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+
+# Convert Employees column to numeric by removing commas and converting to numbers
+fortune_data$Employees <- as.numeric(gsub(",", "", fortune_data$Employees))
+
+# Get the top companies by the number of employees (e.g., top 5)
+top_companies <- fortune_data %>%
+  arrange(desc(Employees)) %>%  # Sort by the number of employees in descending order
+  head(5)  # Select the top 5 companies
+
+# Calculate the total number of employees for percentage calculation among top companies
+total_employees <- sum(top_companies$Employees)
+
+# Create a new column for percentages
+top_companies <- top_companies %>%
+  mutate(Percentage = Employees / total_employees * 100)
+
+# Create a pie chart for employee distribution among top companies
+employee_distribution_pie <- ggplot(top_companies, aes(x = "", y = Employees, fill = Name)) +
+  geom_bar(stat = "identity", color = "white", size = 0.5, width = 1) +
+  coord_polar("y", start = 0) +
+  labs(title = "Employee Distribution by Top 5 Companies", fill = "Company") +
+  geom_text(aes(label = paste0(round(Percentage, 1), "%")), 
+            position = position_stack(vjust = 0.5), color = "black") +
+  theme_void() +
+  theme(legend.position = "right")
+
+# Display the pie chart
+print(employee_distribution_pie)
+
+#BREAK
+
+#5. Top Compnies with highest Revenue and Revenue Growth.
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(tidyr)
+
+# Convert Revenue column to numeric by removing commas and converting to numbers
+fortune_data$`Revenue USD Millions` <- as.numeric(gsub(",", "", fortune_data$`Revenue USD Millions`))
+
+# Get the top companies by revenue
+top_companies <- fortune_data %>%
+  arrange(desc(`Revenue USD Millions`)) %>%
+  head(20)
+
+# Convert Revenue growth to numeric (remove the percentage sign and convert)
+top_companies$`Revenue growth` <- as.numeric(gsub("%", "", top_companies$`Revenue growth`))
+
+# Create a clustered bar chart for Revenue
+revenue_growth_plot <- ggplot(top_companies, aes(x = Name)) +
+  geom_bar(aes(y = `Revenue USD Millions`, fill = "Revenue"), 
+           stat = "identity", 
+           position = position_dodge(), 
+           width = 0.4) +
+  geom_text(aes(y = `Revenue USD Millions`, label = comma(`Revenue USD Millions`)), 
+            vjust = -0.5, size = 3.5, position = position_dodge(0.4)) +  # Add revenue values on bars
+  geom_line(aes(y = `Revenue growth` * 10000, group = 1, color = "Revenue Growth"), 
+            size = 1, 
+            position = position_dodge(width = 0.4)) +
+  geom_point(aes(y = `Revenue growth` * 10000, color = "Revenue Growth"), 
+             size = 3, 
+             position = position_dodge(width = 0.4)) +
+  geom_text(aes(y = `Revenue growth` * 10000, label = paste0(round(`Revenue growth`, 1), "%")), 
+            vjust = -1.5, color = "red", size = 3, position = position_dodge(0.4)) +  # Add revenue growth percentage labels
+  scale_y_continuous(sec.axis = sec_axis(~./10000, name = "Revenue Growth (%)"), 
+                     labels = comma) +  # Adjust the y-axis for revenue growth
+  labs(title = "Revenue and Revenue Growth by TOP 20 Companies", 
+       x = "Company", 
+       y = "Revenue (USD Millions)", 
+       fill = "Metric", 
+       color = "Metric") +
+  scale_fill_manual(values = "blue") +
+  scale_color_manual(values = "red") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Display the clustered bar chart with line plot
+print(revenue_growth_plot)
+
+#BREAK
+
+# 6. Contribution of top companies to the total revenue
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+
+# Calculate total revenue
+total_revenue <- sum(fortune_data$`Revenue USD Millions`)
+
+# Calculate contribution for each company
+fortune_data <- fortune_data %>%
+  mutate(Contribution = (`Revenue USD Millions` / total_revenue) * 100)
+
+# Determine the top companies based on their contribution
+top_companies <- fortune_data %>%
+  arrange(desc(`Revenue USD Millions`)) %>%
+  slice_head(n = 10)
+
+# Create the pie chart
+ggplot(top_companies, aes(x = "", y = Contribution, fill = Name)) +
+  geom_bar(stat = "identity", width = 1, color = "black") + # Add slice borders
+  coord_polar("y", start = 0) +
+  theme_void() + 
+  labs(title = "Contribution of Top Companies to Total Revenue") +
+  theme(legend.position = "right") +
+  geom_text(aes(label = paste0(round(Contribution, 1), "%")), 
+            position = position_stack(vjust = 0.5)) # Add percentage labels
+
+#BREAK
+
+#7. Top compnaies producing highest revenue per employee
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(scales)  # For dollar formatting
+
+# Convert Revenue column to numeric by removing commas and converting to numbers
+fortune_data$`Revenue USD Millions` <- as.numeric(gsub(",", "", fortune_data$`Revenue USD Millions`))
+
+# Convert Employees column to numeric by removing commas and converting to numbers
+fortune_data$Employees <- as.numeric(gsub(",", "", fortune_data$Employees))
+
+# Calculate revenue per employee
+fortune_data <- fortune_data %>%
+  mutate(Revenue_per_Employee = `Revenue USD Millions` * 1e6 / Employees)  # Convert to USD and calculate revenue per employee
+
+# Get the top companies by revenue per employee
+top_revenue_per_employee <- fortune_data %>%
+  arrange(desc(Revenue_per_Employee)) %>%
+  head(10)
+
+# Create a bar chart for Revenue per Employee
+revenue_per_employee_plot <- ggplot(top_revenue_per_employee, aes(x = reorder(Name, -Revenue_per_Employee), y = Revenue_per_Employee, fill = Name)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = dollar(Revenue_per_Employee)),  # Add labels to bars
+            position = position_stack(vjust = 0.5),  # Position labels at the center of the bars
+            color = "white",  # Color of the text
+            size = 4) +  # Adjust size as needed
+  labs(title = "Revenue per Employee by Company - Top 10", 
+       x = "Company", 
+       y = "Revenue per Employee (USD)", 
+       fill = "Company") +
+  scale_y_continuous(labels = dollar) +  # Format y-axis to USD
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Display the bar chart
+print(revenue_per_employee_plot)
+
+
+#BREAK 
+
+# 8.Top companies having the highest employee count
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(scales)
+
+# Convert Employees column to numeric by removing commas and converting to numbers
+fortune_data$Employees <- as.numeric(gsub(",", "", fortune_data$Employees))
+
+# Get the top companies by employee count
+top_companies_by_employees <- fortune_data %>%
+  arrange(desc(Employees)) %>%
+  head(25)
+
+# Create a horizontal bar chart for employee count
+employee_count_plot <- ggplot(top_companies_by_employees, aes(x = reorder(Name, Employees), y = Employees, fill = Name)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Top 25 Companies by Employee Count", 
+       x = "Company", 
+       y = "Employee Count", 
+       fill = "Company") +
+  scale_y_continuous(labels = comma) +  # Format y-axis with commas
+  coord_flip() +  # Flip coordinates for horizontal bar chart
+  theme_minimal() +
+  geom_text(aes(label = comma(Employees)),  # Add employee count labels
+            position = position_stack(vjust = 0.5), 
+            color = "white", 
+            size = 4)  # Adjust size as needed
+
+# Display the horizontal bar chart
+print(employee_count_plot)
+
+#BREAK
+
+#9. revenue growth corresponds to the number of employees by Top companies
+
+# Libraries
+library(ggplot2)
+library(dplyr)
+
+# Convert Employees column to numeric by removing commas and converting to numbers
+fortune_data$Employees <- as.numeric(gsub(",", "", fortune_data$Employees))
+
+# Convert Revenue growth to numeric (remove percentage sign and convert)
+fortune_data$`Revenue growth` <- as.numeric(gsub("%", "", fortune_data$`Revenue growth`))
+
+# Get the top companies by employee count
+top_10_companies <- fortune_data %>% 
+  arrange(desc(Employees)) %>% 
+  head(10)
+
+# Create the dual-axis bar and line plot
+dual_axis_plot <- ggplot(top_10_companies, aes(x = reorder(Name, Employees))) +
+  # First layer: Bars for employee count
+  geom_bar(aes(y = Employees), stat = "identity", fill = "blue", width = 0.6) +
+  
+  # Add values on top of the bars
+  geom_text(aes(y = Employees, label = Employees), 
+            vjust = -0.5, color = "black", size = 4) +
+  
+  # Second layer: Line for revenue growth
+  geom_line(aes(y = `Revenue growth` * 100000, group = 1, color = "Revenue Growth"), size = 1) + 
+  geom_point(aes(y = `Revenue growth` * 100000, color = "Revenue Growth"), size = 3) +
+  
+  # Add values for the revenue growth line
+  geom_text(aes(y = `Revenue growth` * 100000, label = round(`Revenue growth`, 1)), 
+            vjust = -0.5, color = "orange", size = 4) +
+  
+  # Add axis labels
+  scale_y_continuous(
+    name = "Employee Count", 
+    sec.axis = sec_axis(~./100000, name = "Revenue Growth (%)")
+  ) +
+  
+  labs(title = "Employee Count vs. Revenue Growth by TOP 10 Companies", 
+       x = "Company", 
+       y = "Employee Count", 
+       color = "Metric") +
+  
+  # Set colors
+  scale_color_manual(values = "orange") +
+  
+  # Rotate x-axis labels for better readability
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Display the chart
+print(dual_axis_plot)
+
+#BREAK
+
+# 10. Revenue growth contribution by TOP companies
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(scales)  # For formatting percentages
+
+# Convert Revenue growth to numeric (remove the percentage sign)
+fortune_data$`Revenue growth` <- as.numeric(gsub("%", "", fortune_data$`Revenue growth`))
+
+# Get the top companies by revenue growth
+top_revenue_growth_companies <- fortune_data %>%
+  arrange(desc(`Revenue growth`)) %>%
+  head(20) #filter the result here
+
+# Create a stacked bar chart for revenue growth contribution
+revenue_growth_plot <- ggplot(top_revenue_growth_companies, aes(x = reorder(Name, `Revenue growth`), y = `Revenue growth`, fill = Name)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(`Revenue growth`, "%")),  # Add percentage labels on bars
+            position = position_stack(vjust = 0.5),  # Center the labels
+            color = "white",  # Color of the text
+            size = 4) +  # Adjust size as needed
+  labs(title = "Revenue Growth Contribution by Top 20 Companies", 
+       x = "Company", 
+       y = "Revenue Growth (%)", 
+       fill = "Company") +
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +  # Format y-axis to percentage
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+
+# Display the stacked bar chart
+print(revenue_growth_plot)
+
+#BREAK
+
+# 11. companies with significantly higher-than-average revenue growth.
+
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(scales)
+
+# Convert Revenue growth to numeric (remove percentage sign and convert)
+fortune_data$`Revenue growth` <- as.numeric(gsub("%", "", fortune_data$`Revenue growth`))
+
+# Calculate the overall average revenue growth
+overall_average_growth <- mean(fortune_data$`Revenue growth`, na.rm = TRUE)
+
+# Calculate highest revenue and average revenue growth per company
+fortune_data_summary <- fortune_data %>%
+  group_by(Name) %>%  # Group by company name
+  summarise(
+    Highest_Revenue = max(`Revenue USD Millions`, na.rm = TRUE),  # Calculate highest revenue
+    Average_Growth = mean(`Revenue growth`, na.rm = TRUE)  # Calculate average revenue growth
+  ) %>%
+  filter(Average_Growth > overall_average_growth) %>%  # Filter for higher-than-average growth
+  arrange(desc(Highest_Revenue)) %>%  # Arrange in descending order of highest revenue
+  slice_head(n = 15)  # Select the top 15 companies
+
+# Display the summary data (for debugging purposes)
+print(fortune_data_summary)
+
+# Create the plot for the top companies with higher-than-average revenue growth
+top_growth_plot <- ggplot(fortune_data_summary, aes(x = reorder(Name, Highest_Revenue))) +
+  geom_col(aes(y = Highest_Revenue, fill = "Highest Revenue"), position = "dodge") +  # Bar for highest revenue
+  geom_text(aes(y = Highest_Revenue, label = scales::comma(Highest_Revenue)), vjust = -0.5, size = 4) +  # Add labels for highest revenue
+  geom_line(aes(y = Average_Growth * max(fortune_data_summary$Highest_Revenue) / max(fortune_data_summary$Average_Growth), color = "Average Revenue Growth"), size = 1) +  # Line for average growth
+  geom_point(aes(y = Average_Growth * max(fortune_data_summary$Highest_Revenue) / max(fortune_data_summary$Average_Growth), color = "Average Revenue Growth"), size = 3) +  # Points for average growth
+  
+  # Add labels for average growth values as percentages
+  geom_text(aes(y = Average_Growth * max(fortune_data_summary$Highest_Revenue) / max(fortune_data_summary$Average_Growth), 
+                label = paste0(round(Average_Growth, 1), "%")), 
+            vjust = -0.5, size = 4, color = "black") +  # Adjust vjust for better positioning and set color
+  
+  labs(title = "Top 15 Companies with Highest Revenue and Higher-Than-Average Revenue Growth",
+       x = "Company",
+       y = "Revenue (USD Millions)",
+       fill = "Metric",
+       color = "Metric") +
+  
+  scale_y_continuous(labels = scales::comma, 
+                     sec.axis = sec_axis(~./(max(fortune_data_summary$Highest_Revenue) / max(fortune_data_summary$Average_Growth)), 
+                                         name = "Average Growth (%)")) +  # Format y-axis as comma-separated values
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Display the plot
+print(top_growth_plot)
+
+
+#BREAK
+
+# 12. Employee distribution affects revenue growth by TOP companies
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(scales)  # For formatting scales
+
+# Convert Revenue growth to numeric (remove the percentage sign)
+fortune_data$`Revenue growth` <- as.numeric(gsub("%", "", fortune_data$`Revenue growth`))
+
+# Convert Employees column to numeric by removing commas and converting to numbers
+fortune_data$Employees <- as.numeric(gsub(",", "", fortune_data$Employees))
+
+# Get the top companies by revenue growth
+top_companies <- fortune_data %>%
+  arrange(desc(`Revenue growth`)) %>%
+  head(20)
+
+# Create a combined plot for employee distribution and revenue growth
+combined_plot <- ggplot(top_companies, aes(x = reorder(Name, `Revenue growth`))) +
+  
+  # Bar chart for Employee Distribution
+  geom_bar(aes(y = Employees, fill = "Employees"), 
+           stat = "identity", 
+           alpha = 0.6, 
+           position = "dodge") +
+  
+  # Line chart for Revenue Growth
+  geom_line(aes(y = `Revenue growth` * max(top_companies$Employees) / max(top_companies$`Revenue growth`), 
+                group = 1, 
+                color = "Revenue Growth"), 
+            size = 1) +
+  
+  geom_point(aes(y = `Revenue growth` * max(top_companies$Employees) / max(top_companies$`Revenue growth`), 
+                 color = "Revenue Growth"), 
+             size = 3) +
+  
+  # Add labels for revenue growth values on the line
+  geom_text(aes(label = paste0(round(`Revenue growth`, 1), "%"), 
+                y = `Revenue growth` * max(top_companies$Employees) / max(top_companies$`Revenue growth`)), 
+            vjust = -0.5, size = 4) +
+  
+  # Add labels for employee count on the bars
+  geom_text(aes(label = comma(Employees), 
+                y = Employees), 
+            vjust = -0.5, size = 4) +
+  
+  labs(title = "Employee Distribution and Revenue Growth (Top 20 Companies)",
+       x = "Company",
+       y = "Count / Growth (%)",
+       fill = "Metric",
+       color = "Metric") +
+  
+  scale_y_continuous(labels = comma,  # Format y-axis to avoid scientific notation
+                     sec.axis = sec_axis(~ . * max(top_companies$`Revenue growth`) / max(top_companies$Employees), 
+                                         name = "Revenue Growth (%)")) +  # Adjust y-axis for secondary axis
+  scale_fill_manual(values = "steelblue") +
+  scale_color_manual(values = "red") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), 
+        legend.position = "right")
+
+# Display the combined plot
+print(combined_plot)
+
+#BREAK
+
+#13. Top companies by revenue-to-employee ratio.
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(scales)  # For formatting scales
+
+# Convert Revenue column to numeric by removing commas and converting to numbers
+fortune_data$`Revenue USD Millions` <- as.numeric(gsub(",", "", fortune_data$`Revenue USD Millions`))
+
+# Convert Employees column to numeric by removing commas and converting to numbers
+fortune_data$Employees <- as.numeric(gsub(",", "", fortune_data$Employees))
+
+# Calculate Revenue-to-Employee Ratio
+fortune_data <- fortune_data %>%
+  mutate(Revenue_per_Employee = `Revenue USD Millions` * 1e6 / Employees)  # Convert to USD and calculate ratio
+
+# Get the top companies by Revenue-to-Employee Ratio
+top_revenue_per_employee <- fortune_data %>%
+  arrange(desc(Revenue_per_Employee)) %>%
+  head(10)
+
+# Create a bar chart for Revenue-to-Employee Ratio
+revenue_per_employee_plot <- ggplot(top_revenue_per_employee, aes(x = reorder(Name, Revenue_per_Employee), y = Revenue_per_Employee)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_text(aes(label = dollar(Revenue_per_Employee)), vjust = -0.5, size = 4) +  # Display values on bars
+  labs(title = "Top 10 Companies by Revenue-to-Employee Ratio", 
+       x = "Company", 
+       y = "Revenue per Employee (USD)", 
+       fill = "Company") +
+  scale_y_continuous(labels = dollar) +  # Format y-axis to USD
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Display the bar chart
+print(revenue_per_employee_plot)
+
+#BREAK
+
+#14. Headquarters Location Influence on Revenue Growth by Top Companies
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+
+# Convert Revenue growth to numeric (remove the percentage sign)
+fortune_data$`Revenue growth` <- as.numeric(gsub("%", "", fortune_data$`Revenue growth`))
+
+# Get the top companies by revenue growth
+top_20_companies <- fortune_data %>%
+  arrange(desc(`Revenue growth`)) %>%
+  head(20)  # filter the result here
+
+# Calculate average revenue growth by headquarters location for the top 20 companies
+headquarters_growth_top20 <- top_20_companies %>%
+  group_by(Headquarters, Name) %>%  # Include company name in grouping
+  summarize(Average_Growth = mean(`Revenue growth`, na.rm = TRUE))
+
+# Create a dot plot for revenue growth by headquarters for top 20 companies
+growth_plot_headquarters_top20 <- ggplot(headquarters_growth_top20, aes(x = Average_Growth, y = reorder(Headquarters, Average_Growth))) +
+  geom_point(aes(color = Name), size = 4) +  # Use points to represent average growth
+  geom_text(aes(label = paste0(round(Average_Growth, 1), "%")), vjust = -0.5, size = 3) +  # Add percentage labels
+  labs(title = "Headquarters Influence on Revenue Growth (Top 20 Companies)", 
+       x = "Average Revenue Growth (%)", 
+       y = "Headquarters Location") +
+  scale_x_continuous(labels = scales::percent_format(scale = 1)) +  # Format x-axis to percentage
+  theme_minimal() +
+  theme(axis.text.y = element_text(angle = 0))  # Rotate y-axis labels for readability
+
+# Display the dot plot
+print(growth_plot_headquarters_top20)
